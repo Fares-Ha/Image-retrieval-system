@@ -3,48 +3,82 @@ from numpy.linalg import norm
 import pickle
 import io
 import json
-from tensorflow.keras.preprocessing import image
-from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
+
 from sklearn.neighbors import NearestNeighbors
 from PIL import Image
 
+import torch
+import torchvision
+import torchvision.models as models
+
 from flask import Flask, request
+
 
 app = Flask(__name__)
 
+torch.set_num_threads(1)
 print('0')
-model = ResNet50(weights='resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5', include_top=False,
-                 input_shape=(224, 224, 3), pooling='max')
+# Load the pretrained model
+model = models.resnet50(pretrained=True)
+
+# Use the model object to select the desired layer
+layer = model._modules.get('avgpool')
+
+# Set model to evaluation mode
+model.eval()
+
+transforms = torchvision.transforms.Compose([
+    torchvision.transforms.Resize(256),
+    torchvision.transforms.CenterCrop(224),
+    torchvision.transforms.ToTensor(),
+    torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+print(model)
 
 
-def extract_features2(imge, model):
-    input_shape = (224, 224, 3)
-    img = imge.resize((input_shape[0], input_shape[1]), Image.ANTIALIAS)
-    img_array = image.img_to_array(img)
-    expanded_img_array = np.expand_dims(img_array, axis=0)
-    preprocessed_img = preprocess_input(expanded_img_array)
-    features = model.predict(preprocessed_img)
-    flattened_features = features.flatten()
-    normalized_features = flattened_features / norm(flattened_features)
-    return normalized_features
+def get_vector(image):
+    # Create a PyTorch tensor with the transformed image
+    t_img = transforms(image)
+    # Create a vector of zeros that will hold our feature vector
+    # The 'avgpool' layer has an output size of 512
+    my_embedding = torch.zeros(2048)
+
+    # Define a function that will copy the output of a layer
+    def copy_data(m, i, o):
+        my_embedding.copy_(o.flatten())                 # <-- flatten
+
+    # Attach that function to our selected layer
+    h = layer.register_forward_hook(copy_data)
+    # Run the model on our transformed image
+    with torch.no_grad():                               # <-- no_grad context
+        model(t_img.unsqueeze(0))                       # <-- unsqueeze
+    # Detach our copy function from the layer
+    h.remove()
+    # Return the feature vector
+    my_embedding = my_embedding.detach().numpy()
+    my_embedding = my_embedding / norm(my_embedding)
+    return my_embedding
 
 
 def get_ids_by_vectors(indices):
+    with open('/home/fareshm/mysite/id_feature_list', 'rb') as f:
+        id_feature_list = pickle.load(f)
     vv = []
     for i in indices[0]:
         vv.append(id_feature_list[i][0])
     return vv
 
 
-with open('id_feature_list', 'rb') as f:
+with open('/home/fareshm/mysite/id_feature_list', 'rb') as f:
     id_feature_list = pickle.load(f)
-
-print('00')
 
 
 @app.route('/get_sim', methods=['POST', 'GET'])
 def get_sim():
+    with open('/home/fareshm/mysite/id_feature_list', 'rb') as f:
+        id_feature_list = pickle.load(f)
     print('get_sim')
+    print(len(id_feature_list))
     im_file = request.files["image"]
     im_bytes = im_file.read()
     im = Image.open(io.BytesIO(im_bytes))
@@ -56,37 +90,46 @@ def get_sim():
     neighbors = NearestNeighbors(n_neighbors=5, algorithm='brute',
                                  metric='euclidean').fit(feature_list)
 
-    ss = extract_features2(im, model)
+    ss = get_vector(im.convert('RGB'))
 
     distances, indices = neighbors.kneighbors([ss])
+    print(len(id_feature_list))
+    print(indices[0])
 
     return json.dumps(get_ids_by_vectors(indices))
 
 
 @app.route('/add', methods=['POST', 'GET'])
 def add():
+    with open('/home/fareshm/mysite/id_feature_list', 'rb') as f:
+        id_feature_list = pickle.load(f)
     print('add')
     files = request.files.getlist("image")
     print(files)
     idd = request.form["idjj"]
     print(idd)
+
     for im_file in files:
         im_bytes = im_file.read()
         im = Image.open(io.BytesIO(im_bytes))
-        id_feature_list.append((int(idd), extract_features2(im, model)))
+        id_feature_list.append((int(idd), get_vector(im.convert('RGB'))))
 
-    with open('id_feature_list', 'wb') as f:
-        pickle.dump(id_feature_list, f)
+    with open('/home/fareshm/mysite/id_feature_list', 'wb') as g:
+        pickle.dump(id_feature_list, g)
 
     return json.dumps('success')
 
 
 @app.route('/delete', methods=['POST', 'GET'])
 def delete():
+    with open('/home/fareshm/mysite/id_feature_list', 'rb') as g:
+        id_feature_list = pickle.load(g)
     print('delete')
     idd = request.form["idjj"]
+    idd=int(idd)
     print(idd)
     i = 0
+    b = 0
     while True:
         if i == len(id_feature_list):
             break
@@ -94,12 +137,15 @@ def delete():
             print(i)
             id_feature_list.pop(i)
             i = i - 1
+            b=1
         i = i + 1
 
-    with open('id_feature_list', 'wb') as f:
+    with open('/home/fareshm/mysite/id_feature_list', 'wb') as f:
         pickle.dump(id_feature_list, f)
-
-    return json.dumps('success')
+    if b==1:
+        return json.dumps('success')
+    else:
+        return json.dumps('no delete')
 
 
 if __name__ == '__main__':
