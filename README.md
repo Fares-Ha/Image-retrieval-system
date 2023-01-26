@@ -11,3 +11,7 @@ in this phase I used the classification model resnet 50 pretrained on imagenet d
 ## 2- Similarty algorithm
 
 to search among the images in the database, I first extract the feature vector from the desired image the same way, then I find the similar vector using a similarity algorithm, I used KNN - K nearest neighbor - as a similarity alforithm.
+
+
+## Note :
+I wrote this code in order to use image search in an ecommerce shop, so in the id feature list file I have the product_id and the extracted feature vector from its image, and that is applied for all products in database
