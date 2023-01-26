@@ -17,7 +17,7 @@ from flask import Flask, request
 app = Flask(__name__)
 
 torch.set_num_threads(1)
-print('0')
+
 # Load the pretrained model
 model = models.resnet50(pretrained=True)
 
@@ -33,7 +33,6 @@ transforms = torchvision.transforms.Compose([
     torchvision.transforms.ToTensor(),
     torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
-print(model)
 
 
 def get_vector(image):
@@ -77,8 +76,7 @@ with open('/home/fareshm/mysite/id_feature_list', 'rb') as f:
 def get_sim():
     with open('/home/fareshm/mysite/id_feature_list', 'rb') as f:
         id_feature_list = pickle.load(f)
-    print('get_sim')
-    print(len(id_feature_list))
+        
     im_file = request.files["image"]
     im_bytes = im_file.read()
     im = Image.open(io.BytesIO(im_bytes))
@@ -93,8 +91,6 @@ def get_sim():
     ss = get_vector(im.convert('RGB'))
 
     distances, indices = neighbors.kneighbors([ss])
-    print(len(id_feature_list))
-    print(indices[0])
 
     return json.dumps(get_ids_by_vectors(indices))
 
@@ -103,11 +99,8 @@ def get_sim():
 def add():
     with open('/home/fareshm/mysite/id_feature_list', 'rb') as f:
         id_feature_list = pickle.load(f)
-    print('add')
     files = request.files.getlist("image")
-    print(files)
     idd = request.form["idjj"]
-    print(idd)
 
     for im_file in files:
         im_bytes = im_file.read()
@@ -124,17 +117,14 @@ def add():
 def delete():
     with open('/home/fareshm/mysite/id_feature_list', 'rb') as g:
         id_feature_list = pickle.load(g)
-    print('delete')
     idd = request.form["idjj"]
     idd=int(idd)
-    print(idd)
     i = 0
     b = 0
     while True:
         if i == len(id_feature_list):
             break
         if id_feature_list[i][0] == idd:
-            print(i)
             id_feature_list.pop(i)
             i = i - 1
             b=1
